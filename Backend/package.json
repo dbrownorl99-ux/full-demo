@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "dev": "node --watch src/server.js",
-    "start": "NODE_ENV=production node src/server.js"
+"scripts": {
+  "dev": "node --watch server.js",
+  "start": "NODE_ENV=production node server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

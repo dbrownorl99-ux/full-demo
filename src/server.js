@@ -16,7 +16,8 @@ import linksRouter from './linksRouter.js'; // <-- make sure this file exists
 // -------- dirname helpers (ESM) --------
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
-
+// serve everything in /public
+app.use(express.static(path.join(__dirname, '..', 'public')));
 // -------- app + middleware --------
 const app = express();
 app.use(helmet());

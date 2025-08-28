@@ -1,74 +1,137 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document Upload</title>
-    <link rel="stylesheet" href="styles.css">
-    <script>
-      /* Optional: set this if your backend is deployed somewhere */
-      /* window.ORL_BACKEND_URL = 'https://your-domain.com/api/upload'; */
-    </script>
-    <script src="script.js" defer></script>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Document Upload</title>
+  <link rel="stylesheet" href="/styles.css"><!-- absolute path -->
 </head>
 <body>
-    <div class="container">
-        <img src="https://wp.openroadlending.com/wp-content/themes/orlwp/logos/openroad.png" alt="Company Logo" class="logo">
-        <h1>Upload Your Documents</h1>
-        <p>Please be sure the photo/document you are uploading are clear and all 4 corners of the document is visible in the photo.</p>
+  <div class="container">
+    <img src="https://wp.openroadlending.com/wp-content/themes/orlwp/logos/openroad.png" alt="Company Logo" class="logo">
+    <h1>Upload Your Documents</h1>
+    <p id="greeting" class="muted"></p>
+    <p>Please be sure the photo/document you are uploading are clear and all 4 corners of the document is visible in the photo.</p>
 
-        <!-- Inline status area -->
-        <div id="status" class="status" role="status" aria-live="polite"></div>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
 
-        <!-- Removed FormSubmit action/method; names now match backend -->
-        <form id="uploadForm" enctype="multipart/form-data" novalidate>
-            <div class="form-group">
-                <label for="appId">Application ID:</label>
-                <input type="text" id="appId" name="applicationId" placeholder="Enter your 7-digit Application ID" pattern="\d{7}" title="Application ID must be exactly 7 digits" required>
-            </div>
+    <!-- Hidden fields: appId & name are set by JS from the saved link -->
+    <form id="uploadForm" enctype="multipart/form-data" novalidate>
+      <input type="hidden" id="appId" name="applicationId">
+      <input type="hidden" id="customerName" name="customerName">
 
-            <div class="file-input">
-                <label for="license" class="custom-file-upload">Upload Driver's License</label>
-                <input type="file" id="license" name="dl" accept="image/*,application/pdf">
-                <img id="license-preview" class="file-preview" src="" alt="Preview" />
-            </div>
+      <div class="file-input">
+        <label for="license" class="custom-file-upload">Upload Driver's License</label>
+        <input type="file" id="license" name="dl" accept="image/*,application/pdf">
+        <img id="license-preview" class="file-preview" alt="">
+      </div>
 
-            <div class="file-input">
-                <label for="registration" class="custom-file-upload">Upload Registration</label>
-                <input type="file" id="registration" name="registration" accept="image/*,application/pdf">
-                <img id="registration-preview" class="file-preview" src="" alt="Preview" />
-            </div>
+      <div class="file-input">
+        <label for="registration" class="custom-file-upload">Upload Registration</label>
+        <input type="file" id="registration" name="registration" accept="image/*,application/pdf">
+        <img id="registration-preview" class="file-preview" alt="">
+      </div>
 
-            <div class="file-input">
-                <label for="insurance" class="custom-file-upload">Upload Insurance</label>
-                <input type="file" id="insurance" name="insurance" accept="image/*,application/pdf">
-                <img id="insurance-preview" class="file-preview" src="" alt="Preview" />
-            </div>
+      <div class="file-input">
+        <label for="insurance" class="custom-file-upload">Upload Insurance</label>
+        <input type="file" id="insurance" name="insurance" accept="image/*,application/pdf">
+        <img id="insurance-preview" class="file-preview" alt="">
+      </div>
 
-            <div class="file-input">
-                <label for="paystub" class="custom-file-upload">Upload Proof of Income</label>
-                <input type="file" id="paystub" name="income" accept="image/*,application/pdf">
-                <img id="paystub-preview" class="file-preview" src="" alt="Preview" />
-            </div>
+      <div class="file-input">
+        <label for="paystub" class="custom-file-upload">Upload Proof of Income</label>
+        <input type="file" id="paystub" name="income" accept="image/*,application/pdf">
+        <img id="paystub-preview" class="file-preview" alt="">
+      </div>
 
-            <div class="file-input">
-                <label for="residence" class="custom-file-upload">Upload Proof of Residence</label>
-                <input type="file" id="residence" name="other" accept="image/*,application/pdf">
-                <img id="residence-preview" class="file-preview" src="" alt="Preview" />
-            </div>
+      <div class="file-input">
+        <label for="residence" class="custom-file-upload">Upload Proof of Residence</label>
+        <input type="file" id="residence" name="other" accept="image/*,application/pdf">
+        <img id="residence-preview" class="file-preview" alt="">
+      </div>
 
-            <div class="file-input">
-                <label for="other" class="custom-file-upload">Upload Other Document(s)</label>
-                <input type="file" id="other" name="other" accept="image/*,application/pdf" multiple>
-                <img id="other-preview" class="file-preview" src="" alt="Preview" />
-            </div>
+      <div class="file-input">
+        <label for="other" class="custom-file-upload">Upload Other Document(s)</label>
+        <input type="file" id="other" name="other" accept="image/*,application/pdf" multiple>
+        <img id="other-preview" class="file-preview" alt="">
+      </div>
 
-            <button type="submit" class="upload-button orl-btn" id="submitBtn">Upload Documents</button>
+      <button type="submit" class="upload-button orl-btn" id="submitBtn">Upload Documents</button>
 
-            <div id="uploadedMessage" class="hidden">Documents Uploaded!</div>
-            <div id="successMessage" class="hidden">Documents have been sent!</div>
-        </form>
-    </div>
+      <div id="uploadedMessage" class="hidden">Documents Uploaded!</div>
+      <div id="successMessage" class="hidden">Documents have been sent!</div>
+    </form>
+  </div>
+
+  <!-- Load customer by slug & submit to backend -->
+  <script>
+  (function(){
+    const statusEl = document.getElementById('status');
+    const greetEl  = document.getElementById('greeting');
+    const appIdEl  = document.getElementById('appId');
+    const nameEl   = document.getElementById('customerName');
+    const form     = document.getElementById('uploadForm');
+    const previews = [
+      ['license','license-preview'],
+      ['registration','registration-preview'],
+      ['insurance','insurance-preview'],
+      ['paystub','paystub-preview'],
+      ['residence','residence-preview'],
+      ['other','other-preview'],
+    ];
+
+    const parts = location.pathname.split('/').filter(Boolean); // ["u","<slug>"]
+    const slug = parts[1];
+
+    function setStatus(msg){ if(statusEl){ statusEl.textContent = msg; } }
+
+    async function loadLink(){
+      if(!slug){ setStatus('Missing link slug'); throw new Error('Missing slug'); }
+      const res = await fetch(`/api/links/${encodeURIComponent(slug)}`);
+      const data = await res.json().catch(()=>({}));
+      if(!res.ok || !data.ok){ const msg = (data && data.error) || `HTTP ${res.status}`; setStatus(msg); throw new Error(msg); }
+      const link = data.link;
+      appIdEl.value = link.appId || '';
+      nameEl.value  = link.name  || '';
+      if (greetEl) greetEl.textContent = link.name ? `Hi ${link.name}, please upload your documents below.` : '';
+    }
+
+    function wirePreviews(){
+      previews.forEach(([inputId, imgId])=>{
+        const input = document.getElementById(inputId);
+        const img   = document.getElementById(imgId);
+        if(!input || !img) return;
+        input.addEventListener('change', ()=>{
+          const f = input.files && input.files[0];
+          if(!f){ img.src=''; img.style.display='none'; return; }
+          const url = URL.createObjectURL(f);
+          img.src = url; img.style.display='block';
+        });
+      });
+    }
+
+    async function submitForm(e){
+      e.preventDefault();
+      try {
+        setStatus('Uploading…');
+        const fd = new FormData(form);
+        // Post to backend with slug in path
+        const res = await fetch(`/api/upload/${encodeURIComponent(slug)}`, { method:'POST', body: fd });
+        const data = await res.json().catch(()=>({}));
+        if(!res.ok || !data.ok){ throw new Error((data && data.error) || `HTTP ${res.status}`); }
+        setStatus('Upload complete. Thank you!');
+        document.getElementById('uploadedMessage')?.classList.remove('hidden');
+      } catch(err){
+        setStatus(`Upload failed: ${err.message || err}`);
+      }
+    }
+
+    // init
+    loadLink().then(()=>{
+      wirePreviews();
+      form.addEventListener('submit', submitForm);
+    }).catch(()=>{ /* error already shown */ });
+  })();
+  </script>
 </body>
 </html>
-

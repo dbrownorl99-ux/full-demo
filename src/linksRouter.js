@@ -1,20 +1,15 @@
-// linksRouter.js
-// Express router to create/list/delete customer personal links.
-// Stores data in data/links.json (a simple JSON file).
-// If you are already using a DB, swap the file helpers for your DB calls.
+// linksRouter.js (ESM version)
+import fs from 'fs';
+import path from 'path';
+import express from 'express';
 
-const fs = require('fs');
-const path = require('path');
-const express = require('express');
 const router = express.Router();
-
-const DATA_FILE = path.join(__dirname, 'data', 'links.json');
+const DATA_FILE = path.join(process.cwd(), 'data', 'links.json');
 
 function readLinks() {
   try {
-    const raw = fs.readFileSync(DATA_FILE, 'utf8');
-    return JSON.parse(raw);
-  } catch (e) {
+    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  } catch {
     return [];
   }
 }
@@ -22,7 +17,6 @@ function writeLinks(links) {
   fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
   fs.writeFileSync(DATA_FILE, JSON.stringify(links, null, 2), 'utf8');
 }
-
 function slugify(input) {
   return String(input || 'link')
     .toLowerCase()
@@ -30,7 +24,6 @@ function slugify(input) {
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
 }
-
 function makeId(n = 8) {
   const alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz';
   let out = '';
@@ -41,9 +34,7 @@ function makeId(n = 8) {
 // Create link
 router.post('/', (req, res) => {
   const { appId, name } = req.body || {};
-  if (!appId || !name) {
-    return res.status(400).json({ error: 'appId and name are required' });
-  }
+  if (!appId || !name) return res.status(400).json({ error: 'appId and name are required' });
   const links = readLinks();
   const id = makeId(10);
   const slugBase = slugify(name) || 'customer';
@@ -55,7 +46,7 @@ router.post('/', (req, res) => {
   res.json({ link });
 });
 
-// List links (with simple search)
+// List links
 router.get('/', (req, res) => {
   const { q } = req.query || {};
   const links = readLinks();
@@ -66,7 +57,6 @@ router.get('/', (req, res) => {
         l.slug.toLowerCase().includes(String(q).toLowerCase())
       )
     : links;
-  // newest first
   filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   res.json({ links: filtered });
 });
@@ -76,12 +66,10 @@ router.delete('/:id', (req, res) => {
   const { id } = req.params;
   const links = readLinks();
   const idx = links.findIndex(l => l.id === id);
-  if (idx === -1) {
-    return res.status(404).json({ error: 'Not found' });
-  }
+  if (idx === -1) return res.status(404).json({ error: 'Not found' });
   const [removed] = links.splice(idx, 1);
   writeLinks(links);
   res.json({ ok: true, removed });
 });
 
-module.exports = router;
+export default router;

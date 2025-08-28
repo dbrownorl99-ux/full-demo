@@ -11,10 +11,9 @@ import { fileURLToPath } from 'url';
 import { upload, collectAttachments } from './upload.js';
 import { buildTransport, sendDocsEmail } from './mailer.js';
 import { DOC_LABELS } from './filename.js';
-import linksRouter from './linksRouter.js';  // <-- inside src now
-app.use('/api/links', linksRouter);
+import linksRouter from './linksRouter.js'; // if the router is in src/
 
-// --- dirname helpers (ESM) ---
+// --- dirname helpers ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
@@ -32,17 +31,16 @@ app.use(cors({ origin: allowedOrigin ? [allowedOrigin] : true, credentials: fals
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 200 });
 app.use('/api/', limiter);
 
-// --- static files (serve your frontend) ---
-app.use(express.static(path.join(__dirname, '..', 'public'))); 
-// If your files are at the repo root instead of /public, use this:
-// app.use(express.static(path.join(__dirname, '..')));
+// --- mount your router (now app exists) ---
+app.use('/api/links', linksRouter);
+
+// --- static files ---
+app.use(express.static(path.join(__dirname, '..', 'public'))); // or '..' if your HTML is at repo root
 
 // --- healthcheck ---
 app.get('/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
-// --- links API + personal URL redirect ---
-app.use('/api/links', linksRouter);
-
+// --- personal link redirect ---
 app.get('/u/:slug', (req, res) => {
   const dataFile = path.join(__dirname, '..', 'data', 'links.json');
   const links = fs.existsSync(dataFile) ? JSON.parse(fs.readFileSync(dataFile, 'utf8')) : [];
@@ -110,4 +108,5 @@ ${files.map(f => ` - ${(DOC_LABELS[f.fieldname] || f.fieldname)}: ${f.originalna
 // --- start ---
 const port = Number(process.env.PORT || 8080);
 app.listen(port, () => console.log(`Server listening on http://localhost:${port}`));
+
 

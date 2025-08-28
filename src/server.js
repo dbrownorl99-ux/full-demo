@@ -1,0 +1,131 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import path from 'path';
+import fs from 'fs';
+
+import { upload, collectAttachments } from './upload.js';
+import { buildTransport, sendDocsEmail } from './mailer.js';
+import { DOC_LABELS } from './filename.js';
+
+
+import linksRouter from './linksRouter.js';
+app.use('/api/links', linksRouter);
+
+import fs from 'fs';
+app.get('/u/:slug', (req, res) => {
+  const dataFile = path.join(__dirname, 'data', 'links.json');
+  const links = fs.existsSync(dataFile) ? JSON.parse(fs.readFileSync(dataFile, 'utf8')) : [];
+  const link = links.find(l => l.slug === req.params.slug);
+  if (!link) return res.status(404).send('Not found');
+  res.redirect(`/index.html?appId=${encodeURIComponent(link.appId)}&name=${encodeURIComponent(link.name)}`);
+});
+
+const app = express();
+app.use(helmet());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+const allowedOrigin = process.env.ALLOWED_ORIGIN;
+app.use(cors({
+  origin: allowedOrigin ? [allowedOrigin] : true,
+  credentials: false
+}));
+
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 200 });
+app.use('/api/', limiter);
+
+// Healthcheck
+app.get('/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+
+// Upload endpoint
+// Expect fields: applicationId (string), customerName (optional), customerEmail (optional)
+// Files (any of these, optional): dl, registration, insurance, income, other
+app.post('/api/upload', upload.fields([
+  { name: 'dl', maxCount: 1 },
+  { name: 'registration', maxCount: 1 },
+  { name: 'insurance', maxCount: 1 },
+  { name: 'income', maxCount: 1 },
+  { name: 'other', maxCount: 3 }
+]), async (req, res) => {
+  try {
+    const { applicationId, customerName, customerEmail } = req.body;
+
+    if (!applicationId) {
+      return res.status(400).json({ ok: false, error: 'applicationId is required' });
+    }
+
+    // Flatten files
+    const files = Object.values(req.files || {}).flat();
+    if (!files.length) {
+      return res.status(400).json({ ok: false, error: 'No files uploaded' });
+    }
+
+    const transport = buildTransport({
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT,
+      secure: process.env.SMTP_SECURE,
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    });
+
+    const to = process.env.TO_EMAIL;
+    if (!to) {
+      return res.status(500).json({ ok: false, error: 'Server email not configured (TO_EMAIL missing)' });
+    }
+
+    const subject = `New docs for Application ${applicationId}${customerName ? ' - ' + customerName : ''}`;
+
+    const fileListHtml = files.map(f => {
+      const label = DOC_LABELS[f.fieldname] || f.fieldname;
+      return `<li><b>${label}</b> — ${f.originalname} (${Math.round(f.size/1024)} KB)</li>`;
+    }).join('');
+
+    const html = `
+      <p>You received new document uploads.</p>
+      <ul>
+        <li><b>Application ID:</b> ${applicationId}</li>
+        ${customerName ? `<li><b>Customer Name:</b> ${customerName}</li>` : ''}
+        ${customerEmail ? `<li><b>Customer Email:</b> ${customerEmail}</li>` : ''}
+      </ul>
+      <p><b>Files:</b></p>
+      <ul>${fileListHtml}</ul>
+    `;
+
+    const text = `New document uploads
+Application ID: ${applicationId}
+${customerName ? 'Customer Name: ' + customerName + '\n' : ''}${customerEmail ? 'Customer Email: ' + customerEmail + '\n' : ''}
+Files:
+${files.map(f => ` - ${(DOC_LABELS[f.fieldname] || f.fieldname)}: ${f.originalname} (${Math.round(f.size/1024)} KB)`).join('\n')}
+`;
+
+    const attachments = collectAttachments(files);
+
+    await sendDocsEmail(transport, {
+      to,
+      from: process.env.SMTP_USER,
+      subject,
+      text,
+      html,
+      attachments
+    });
+
+    res.json({ ok: true, message: 'Uploaded and emailed successfully', files: files.map(f => f.filename) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: err.message || 'Upload failed' });
+  }
+});
+
+const port = Number(process.env.PORT || 8080);
+app.listen(port, () => {
+  console.log(`Server listening on http://localhost:${port}`);
+});

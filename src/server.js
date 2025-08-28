@@ -1,4 +1,4 @@
-// -------- imports --------
+// --- imports ---
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -11,51 +11,46 @@ import { fileURLToPath } from 'url';
 import { upload, collectAttachments } from './upload.js';
 import { buildTransport, sendDocsEmail } from './mailer.js';
 import { DOC_LABELS } from './filename.js';
-import linksRouter from './linksRouter.js'; // <-- make sure this file exists
+import linksRouter from '../linksRouter.js'; // if linksRouter.js is at repo root
 
-// -------- dirname helpers (ESM) --------
+// --- dirname helpers (ESM) ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
-// serve everything in /public
-app.use(express.static(path.join(__dirname, '..', 'public')));
-// -------- app + middleware --------
+
+// --- create app FIRST ---
 const app = express();
+
+// --- core middleware ---
 app.use(helmet());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const allowedOrigin = process.env.ALLOWED_ORIGIN;
-app.use(cors({
-  origin: allowedOrigin ? [allowedOrigin] : true,
-  credentials: false
-}));
+app.use(cors({ origin: allowedOrigin ? [allowedOrigin] : true, credentials: false }));
 
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 200 });
 app.use('/api/', limiter);
 
-// -------- static files --------
-// Your frontend files (index.html, styles.css, script.js) are at the repo root
-app.use(express.static(process.cwd()));
+// --- static files (serve your frontend) ---
+app.use(express.static(path.join(__dirname, '..', 'public'))); 
+// If your files are at the repo root instead of /public, use this:
+// app.use(express.static(path.join(__dirname, '..')));
 
-// -------- health --------
+// --- healthcheck ---
 app.get('/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
-// -------- links API + personal URL redirect --------
+// --- links API + personal URL redirect ---
 app.use('/api/links', linksRouter);
 
 app.get('/u/:slug', (req, res) => {
-  const dataFile = path.join(process.cwd(), 'data', 'links.json');
+  const dataFile = path.join(__dirname, '..', 'data', 'links.json');
   const links = fs.existsSync(dataFile) ? JSON.parse(fs.readFileSync(dataFile, 'utf8')) : [];
   const link = links.find(l => l.slug === req.params.slug);
   if (!link) return res.status(404).send('Not found');
-
-  // If your uploader page has a different filename, change index.html below
   res.redirect(`/index.html?appId=${encodeURIComponent(link.appId)}&name=${encodeURIComponent(link.name)}`);
 });
 
-// -------- upload endpoint --------
-// Fields: applicationId (required), customerName (opt), customerEmail (opt)
-// Files: dl, registration, insurance, income, other (multiple allowed for "other")
+// --- upload endpoint ---
 app.post('/api/upload', upload.fields([
   { name: 'dl', maxCount: 1 },
   { name: 'registration', maxCount: 1 },
@@ -65,33 +60,23 @@ app.post('/api/upload', upload.fields([
 ]), async (req, res) => {
   try {
     const { applicationId, customerName, customerEmail } = req.body;
-    if (!applicationId) {
-      return res.status(400).json({ ok: false, error: 'applicationId is required' });
-    }
+    if (!applicationId) return res.status(400).json({ ok: false, error: 'applicationId is required' });
 
     const files = Object.values(req.files || {}).flat();
-    if (!files.length) {
-      return res.status(400).json({ ok: false, error: 'No files uploaded' });
-    }
+    if (!files.length) return res.status(400).json({ ok: false, error: 'No files uploaded' });
 
     const transport = buildTransport({
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT,
-      secure: process.env.SMTP_SECURE,
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
+      host: process.env.SMTP_HOST, port: process.env.SMTP_PORT,
+      secure: process.env.SMTP_SECURE, user: process.env.SMTP_USER, pass: process.env.SMTP_PASS
     });
 
     const to = process.env.TO_EMAIL;
-    if (!to) {
-      return res.status(500).json({ ok: false, error: 'Server email not configured (TO_EMAIL missing)' });
-    }
+    if (!to) return res.status(500).json({ ok: false, error: 'Server email not configured (TO_EMAIL missing)' });
 
     const subject = `New docs for Application ${applicationId}${customerName ? ' - ' + customerName : ''}`;
-
     const fileListHtml = files.map(f => {
       const label = DOC_LABELS[f.fieldname] || f.fieldname;
-      return `<li><b>${label}</b> — ${f.originalname} (${Math.round(f.size / 1024)} KB)</li>`;
+      return `<li><b>${label}</b> — ${f.originalname} (${Math.round(f.size/1024)} KB)</li>`;
     }).join('');
 
     const html = `
@@ -104,7 +89,6 @@ app.post('/api/upload', upload.fields([
       <p><b>Files:</b></p>
       <ul>${fileListHtml}</ul>
     `;
-
     const text = `New document uploads
 Application ID: ${applicationId}
 ${customerName ? 'Customer Name: ' + customerName + '\n' : ''}${customerEmail ? 'Customer Email: ' + customerEmail + '\n' : ''}
@@ -113,15 +97,7 @@ ${files.map(f => ` - ${(DOC_LABELS[f.fieldname] || f.fieldname)}: ${f.originalna
 `;
 
     const attachments = collectAttachments(files);
-
-    await sendDocsEmail(transport, {
-      to,
-      from: process.env.SMTP_USER,
-      subject,
-      text,
-      html,
-      attachments
-    });
+    await sendDocsEmail(transport, { to, from: process.env.SMTP_USER, subject, text, html, attachments });
 
     res.json({ ok: true, message: 'Uploaded and emailed successfully', files: files.map(f => f.filename) });
   } catch (err) {
@@ -130,9 +106,7 @@ ${files.map(f => ` - ${(DOC_LABELS[f.fieldname] || f.fieldname)}: ${f.originalna
   }
 });
 
-// -------- start --------
+// --- start ---
 const port = Number(process.env.PORT || 8080);
-app.listen(port, () => {
-  console.log(`Server listening on http://localhost:${port}`);
-});
+app.listen(port, () => console.log(`Server listening on http://localhost:${port}`));
 

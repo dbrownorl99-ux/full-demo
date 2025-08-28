@@ -1,23 +1,31 @@
-// server.js
+// src/server.js
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+// If you created the router from my previous message:
+import linksRouter from './linksRouter.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// PUBLIC DIR (adjust if your structure differs)
+// Adjust this if your public folder is elsewhere:
 const publicDir = path.join(__dirname, '..', 'public');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* ---------- Middleware ---------- */
+/* -------------------- App & Middleware -------------------- */
+
+// Render runs behind a proxy; this helps if you ever look at req.ip, etc.
+app.set('trust proxy', 1);
+
+// Parse JSON & forms
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Allow your site origin (set ALLOWED_ORIGIN in Render env vars)
+// CORS — allow your site origin (set ALLOWED_ORIGIN in Render env)
 const allowedOrigin = process.env.ALLOWED_ORIGIN || '*';
 app.use(
   cors({
@@ -26,60 +34,63 @@ app.use(
   })
 );
 
-// Serve static files BUT DO NOT auto-serve index.html at "/"
+// Serve static assets, but DO NOT auto-serve index.html at "/"
 app.use(express.static(publicDir, { index: false }));
 
-/* ---------- Routes ---------- */
+/* -------------------- Health -------------------- */
 
-// Health check (Render uses this sometimes; also handy for you)
 app.get('/health', (_req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, env: process.env.NODE_ENV || 'development' });
 });
+
+/* -------------------- API Routes -------------------- */
+
+// Link management API (persistent JSON store in /data via linksRouter)
+app.use('/api/links', linksRouter);
+
+/* -------------------- Web Routes -------------------- */
 
 // Homepage → Page Generator
 app.get('/', (_req, res) => {
   res.sendFile(path.join(publicDir, 'generate.html'));
 });
 
-// Optional admin dashboard (if you have it)
+// Optional admin dashboard (if you have public/admin.html)
 app.get('/admin', (_req, res) => {
   res.sendFile(path.join(publicDir, 'admin.html'));
 });
 
 /**
- * Customer upload links.
- *
- * If your existing app already has its own /u/:slug handler that builds a
- * redirect to `/index.html?appId=...&name=...`, keep that.
- * If not, serving index.html directly here is safe; your client code can
- * read the slug from location.pathname and fetch data as needed.
+ * Customer upload page (Document Upload) — only reachable via generated links.
+ * If your old server built a redirect like /index.html?appId=...&name=...,
+ * you can look up the slug using the links API/store and res.redirect here.
+ * For most setups, serving index.html and letting client-side JS fetch by slug is perfect.
  */
 app.get('/u/:slug', (req, res) => {
-  // If you previously did a server-side redirect based on slug → querystring,
-  // you can restore it here by looking up the slug from your storage and
-  // calling res.redirect(`/index.html?...`).
-  // Otherwise, just serve the upload page and let the client handle the slug.
+  // Example of optional server-side redirect:
+  // const slug = req.params.slug;
+  // const record = await findBySlug(slug); // your lookup
+  // if (!record) return res.status(404).send('Link not found');
+  // return res.redirect(`/index.html?appId=${encodeURIComponent(record.appId)}&name=${encodeURIComponent(record.name)}`);
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
-// (Optional) direct /upload route to the same upload page
+// Optional direct path to the upload page
 app.get('/upload', (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
-/* ---------- (Keep your API routers here) ---------- */
-// Example:
-// import linksRouter from './linksRouter.js';
-// app.use('/api/links', linksRouter);
+/* -------------------- 404 Fallback -------------------- */
 
-/* ---------- Fallback 404 for unmatched routes ---------- */
 app.use((req, res) => {
+  // Serve a custom 404 page if you have public/404.html
   res.status(404).sendFile(path.join(publicDir, '404.html'), (err) => {
     if (err) res.status(404).send('Not found');
   });
 });
 
-/* ---------- Start ---------- */
+/* -------------------- Start -------------------- */
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

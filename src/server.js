@@ -11,7 +11,8 @@ import { fileURLToPath } from 'url';
 import { upload, collectAttachments } from './upload.js';
 import { buildTransport, sendDocsEmail } from './mailer.js';
 import { DOC_LABELS } from './filename.js';
-import linksRouter from '../linksRouter.js'; // if linksRouter.js is at repo root
+import linksRouter from './linksRouter.js';  // <-- inside src now
+app.use('/api/links', linksRouter);
 
 // --- dirname helpers (ESM) ---
 const __filename = fileURLToPath(import.meta.url);

@@ -1,9 +1,4 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-app.use(express.static(path.join(__dirname, 'public')));
-
+// -------- imports --------
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -11,24 +6,18 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import path from 'path';
 import fs from 'fs';
+import { fileURLToPath } from 'url';
 
 import { upload, collectAttachments } from './upload.js';
 import { buildTransport, sendDocsEmail } from './mailer.js';
 import { DOC_LABELS } from './filename.js';
+import linksRouter from './linksRouter.js'; // <-- make sure this file exists
 
+// -------- dirname helpers (ESM) --------
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
-import linksRouter from './linksRouter.js';
-app.use('/api/links', linksRouter);
-
-import fs from 'fs';
-app.get('/u/:slug', (req, res) => {
-  const dataFile = path.join(__dirname, 'data', 'links.json');
-  const links = fs.existsSync(dataFile) ? JSON.parse(fs.readFileSync(dataFile, 'utf8')) : [];
-  const link = links.find(l => l.slug === req.params.slug);
-  if (!link) return res.status(404).send('Not found');
-  res.redirect(`/index.html?appId=${encodeURIComponent(link.appId)}&name=${encodeURIComponent(link.name)}`);
-});
-
+// -------- app + middleware --------
 const app = express();
 app.use(helmet());
 app.use(express.json());
@@ -43,12 +32,29 @@ app.use(cors({
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 200 });
 app.use('/api/', limiter);
 
-// Healthcheck
-app.get('/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+// -------- static files --------
+// Your frontend files (index.html, styles.css, script.js) are at the repo root
+app.use(express.static(process.cwd()));
 
-// Upload endpoint
-// Expect fields: applicationId (string), customerName (optional), customerEmail (optional)
-// Files (any of these, optional): dl, registration, insurance, income, other
+// -------- health --------
+app.get('/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+
+// -------- links API + personal URL redirect --------
+app.use('/api/links', linksRouter);
+
+app.get('/u/:slug', (req, res) => {
+  const dataFile = path.join(process.cwd(), 'data', 'links.json');
+  const links = fs.existsSync(dataFile) ? JSON.parse(fs.readFileSync(dataFile, 'utf8')) : [];
+  const link = links.find(l => l.slug === req.params.slug);
+  if (!link) return res.status(404).send('Not found');
+
+  // If your uploader page has a different filename, change index.html below
+  res.redirect(`/index.html?appId=${encodeURIComponent(link.appId)}&name=${encodeURIComponent(link.name)}`);
+});
+
+// -------- upload endpoint --------
+// Fields: applicationId (required), customerName (opt), customerEmail (opt)
+// Files: dl, registration, insurance, income, other (multiple allowed for "other")
 app.post('/api/upload', upload.fields([
   { name: 'dl', maxCount: 1 },
   { name: 'registration', maxCount: 1 },
@@ -58,12 +64,10 @@ app.post('/api/upload', upload.fields([
 ]), async (req, res) => {
   try {
     const { applicationId, customerName, customerEmail } = req.body;
-
     if (!applicationId) {
       return res.status(400).json({ ok: false, error: 'applicationId is required' });
     }
 
-    // Flatten files
     const files = Object.values(req.files || {}).flat();
     if (!files.length) {
       return res.status(400).json({ ok: false, error: 'No files uploaded' });
@@ -86,7 +90,7 @@ app.post('/api/upload', upload.fields([
 
     const fileListHtml = files.map(f => {
       const label = DOC_LABELS[f.fieldname] || f.fieldname;
-      return `<li><b>${label}</b> — ${f.originalname} (${Math.round(f.size/1024)} KB)</li>`;
+      return `<li><b>${label}</b> — ${f.originalname} (${Math.round(f.size / 1024)} KB)</li>`;
     }).join('');
 
     const html = `
@@ -125,7 +129,9 @@ ${files.map(f => ` - ${(DOC_LABELS[f.fieldname] || f.fieldname)}: ${f.originalna
   }
 });
 
+// -------- start --------
 const port = Number(process.env.PORT || 8080);
 app.listen(port, () => {
   console.log(`Server listening on http://localhost:${port}`);
 });
+

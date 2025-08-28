@@ -58,35 +58,75 @@
       <p class="muted" style="margin-top:18px">Tip: send this URL to the customer. When they open it, your uploader will show their name and app ID and use the app ID in the email subject.</p>
     </div>
   </div>
-  <script>
-    async function createLink(payload) {
-      const res = await fetch('/api/links', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error('Failed to create link');
-      return res.json();
-    }
-    const form = document.getElementById('createForm');
-    const result = document.getElementById('result');
-    const urlEl = document.getElementById('url');
-    const copyBtn = document.getElementById('copyBtn');
+<script>
+  // Safely parse JSON even if server returns HTML on error
+  async function safeJson(resp) {
+    const text = await resp.text();
+    try { return JSON.parse(text); } catch { return { ok: false, error: text?.slice(0,300) || 'Non-JSON response' }; }
+  }
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const fd = new FormData(form);
-      const payload = { name: fd.get('name'), appId: fd.get('appId') };
-      try {
-        const { link } = await createLink(payload);
-        const url = `${location.origin}/u/${encodeURIComponent(link.slug)}`;
-        result.style.display = 'block';
-        urlEl.textContent = url;
-        copyBtn.onclick = () => navigator.clipboard.writeText(url);
-      } catch (err) {
-        alert(err.message || 'Something went wrong');
-      }
+  async function createLink(payload) {
+    const res = await fetch('/api/links', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
-  </script>
+    const data = await safeJson(res);
+    if (!res.ok || !data || data.ok === false) {
+      const msg = (data && data.error) || `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+    if (!data.slug && !data.url) {
+      throw new Error('Server did not return a slug/url');
+    }
+    return data; // { ok: true, slug, url }
+  }
+
+  const form   = document.getElementById('createForm');
+  const result = document.getElementById('result');
+  const urlEl  = document.getElementById('url');
+  const copyBtn= document.getElementById('copyBtn');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const fd = new FormData(form);
+    const name  = (fd.get('name')  || '').trim();
+    const appId = (fd.get('appId') || '').trim();
+    if (!name)  return alert('Please enter the customer name.');
+    if (!appId) return alert('Please enter the Application ID.');
+
+    try {
+      const data = await createLink({ name, appId });
+
+      // Prefer server-provided full URL if present; otherwise build it
+      const url = data.url && data.url.startsWith('http')
+        ? data.url
+        : `${location.origin}/u/${encodeURIComponent(data.slug)}`;
+
+      result.style.display = 'block';
+      urlEl.textContent = url;
+
+      copyBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(url);
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => (copyBtn.textContent = 'Copy'), 1200);
+        } catch {
+          // fallback
+          const sel = window.getSelection();
+          const range = document.createRange();
+          range.selectNodeContents(urlEl);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          document.execCommand('copy');
+          sel.removeAllRanges();
+        }
+      };
+    } catch (err) {
+      alert(`Failed to create link: ${err.message || err}`);
+    }
+  });
+</script>
 </body>
 </html>

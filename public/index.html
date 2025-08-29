@@ -1,10 +1,130 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Document Upload</title>
-  <link rel="stylesheet" href="/styles.css"><!-- absolute path -->
+
+  <!-- Optional: if your backend lives on another origin, set it here -->
+  <!-- <script>window.ORL_BACKEND_BASE = 'https://orl-backend.onrender.com';</script> -->
+
+  <style>
+    /* === styles.css merged === */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f0f4f8;
+      color: #333;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 100%;
+      width: 500px;
+      margin: auto;
+      padding: 80px;
+      background: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+
+    .logo {
+      max-width: 150px;
+      margin-bottom: 20px;
+      animation: bounce 2s infinite;
+    }
+    @keyframes bounce {
+      0%,20%,50%,80%,100% { transform: translateY(0); }
+      40% { transform: translateY(-30px); }
+      60% { transform: translateY(-15px); }
+    }
+
+    h1 { color: #4caf50; font-size: 24px; margin-bottom: 12px; }
+    p { color: #000; margin-bottom: 15px; }
+    .muted { color: #6b7280; margin-top: -6px; margin-bottom: 10px; }
+
+    .file-input { position: relative; margin-bottom: 15px; }
+    .custom-file-upload {
+      display: inline-block;
+      padding: 10px;
+      background-color: #4caf50;
+      width: 300px;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    input[type="file"] { display: none; }
+
+    .file-preview {
+      display: none;
+      margin-top: 8px;
+      max-width: 240px;
+      height: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+    }
+
+    .upload-button {
+      background-color: #4caf50;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 5px;
+      transition: background-color 0.3s, transform 0.2s ease;
+      font-weight: bold;
+    }
+    .upload-button:hover { background-color: #45a049; transform: scale(1.05); }
+
+    /* ORL green/silver button */
+    .orl-btn {
+      background: linear-gradient(180deg, #25b356, #1e8f45);
+      color: #fff;
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 18px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      box-shadow: 0 6px 18px rgba(37, 179, 86, 0.25);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer;
+    }
+    .orl-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(37, 179, 86, 0.35); }
+    .orl-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
+    /* Status banners */
+    .status {
+      min-height: 20px;
+      margin: 10px 0 14px 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      display: none;
+      font-size: 0.95rem;
+      text-align: left;
+    }
+    .status.success {
+      display: block; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0;
+    }
+    .status.error {
+      display: block; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca;
+    }
+
+    .hidden { display: none; }
+
+    /* Responsive */
+    @media (max-width: 500px) {
+      .container { width: 100%; padding: 50px; }
+      .custom-file-upload { width: 100%; }
+      .upload-button { width: 100%; }
+    }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -13,10 +133,12 @@
     <p id="greeting" class="muted"></p>
     <p>Please be sure the photo/document you are uploading are clear and all 4 corners of the document is visible in the photo.</p>
 
+    <!-- Inline status area -->
     <div id="status" class="status" role="status" aria-live="polite"></div>
 
-    <!-- Hidden fields: appId & name are set by JS from the saved link -->
+    <!-- BACKEND upload; hidden name/appId are set from /api/links/:slug -->
     <form id="uploadForm" enctype="multipart/form-data" novalidate>
+      <!-- Hidden customer identity pulled from backend -->
       <input type="hidden" id="appId" name="applicationId">
       <input type="hidden" id="customerName" name="customerName">
 
@@ -63,75 +185,153 @@
     </form>
   </div>
 
-  <!-- Load customer by slug & submit to backend -->
   <script>
-  (function(){
-    const statusEl = document.getElementById('status');
-    const greetEl  = document.getElementById('greeting');
-    const appIdEl  = document.getElementById('appId');
-    const nameEl   = document.getElementById('customerName');
-    const form     = document.getElementById('uploadForm');
-    const previews = [
-      ['license','license-preview'],
-      ['registration','registration-preview'],
-      ['insurance','insurance-preview'],
-      ['paystub','paystub-preview'],
-      ['residence','residence-preview'],
-      ['other','other-preview'],
-    ];
+    (function () {
+      const form = document.getElementById('uploadForm');
+      const statusBox = document.getElementById('status');
+      const submitBtn = document.getElementById('submitBtn');
 
-    const parts = location.pathname.split('/').filter(Boolean); // ["u","<slug>"]
-    const slug = parts[1];
+      const appIdEl = document.getElementById('appId');           // hidden
+      const nameEl  = document.getElementById('customerName');     // hidden
+      const greetingEl = document.getElementById('greeting');      // optional read-only display
 
-    function setStatus(msg){ if(statusEl){ statusEl.textContent = msg; } }
+      // Get slug from /u/:slug
+      const parts = location.pathname.split('/').filter(Boolean); // ["u","<slug>"]
+      const slug = parts[1];
 
-    async function loadLink(){
-      if(!slug){ setStatus('Missing link slug'); throw new Error('Missing slug'); }
-      const res = await fetch(`/api/links/${encodeURIComponent(slug)}`);
-      const data = await res.json().catch(()=>({}));
-      if(!res.ok || !data.ok){ const msg = (data && data.error) || `HTTP ${res.status}`; setStatus(msg); throw new Error(msg); }
-      const link = data.link;
-      appIdEl.value = link.appId || '';
-      nameEl.value  = link.name  || '';
-      if (greetEl) greetEl.textContent = link.name ? `Hi ${link.name}, please upload your documents below.` : '';
-    }
-
-    function wirePreviews(){
-      previews.forEach(([inputId, imgId])=>{
-        const input = document.getElementById(inputId);
-        const img   = document.getElementById(imgId);
-        if(!input || !img) return;
-        input.addEventListener('change', ()=>{
-          const f = input.files && input.files[0];
-          if(!f){ img.src=''; img.style.display='none'; return; }
-          const url = URL.createObjectURL(f);
-          img.src = url; img.style.display='block';
-        });
-      });
-    }
-
-    async function submitForm(e){
-      e.preventDefault();
-      try {
-        setStatus('Uploading…');
-        const fd = new FormData(form);
-        // Post to backend with slug in path
-        const res = await fetch(`/api/upload/${encodeURIComponent(slug)}`, { method:'POST', body: fd });
-        const data = await res.json().catch(()=>({}));
-        if(!res.ok || !data.ok){ throw new Error((data && data.error) || `HTTP ${res.status}`); }
-        setStatus('Upload complete. Thank you!');
-        document.getElementById('uploadedMessage')?.classList.remove('hidden');
-      } catch(err){
-        setStatus(`Upload failed: ${err.message || err}`);
+      function setStatus(message, type) {
+        if (!statusBox) return;
+        statusBox.textContent = message || '';
+        statusBox.className = 'status ' + (type || '');
       }
-    }
 
-    // init
-    loadLink().then(()=>{
-      wirePreviews();
-      form.addEventListener('submit', submitForm);
-    }).catch(()=>{ /* error already shown */ });
-  })();
+      function busy(isBusy) {
+        if (!submitBtn) return;
+        submitBtn.disabled = !!isBusy;
+        submitBtn.textContent = isBusy ? 'Uploading…' : 'Upload Documents';
+      }
+
+      // Preview helper (images only; hides preview for PDFs)
+      function wirePreview(inputId, previewId) {
+        const input = document.getElementById(inputId);
+        const preview = document.getElementById(previewId);
+        if (!input || !preview) return;
+
+        input.addEventListener('change', () => {
+          const file = input.files && input.files[0];
+          if (!file) {
+            preview.src = '';
+            preview.style.display = 'none';
+            return;
+          }
+          if (file.type && file.type.startsWith('image/')) {
+            const url = URL.createObjectURL(file);
+            preview.src = url;
+            preview.style.display = 'block';
+          } else {
+            preview.src = '';
+            preview.style.display = 'none';
+          }
+        });
+      }
+
+      function wirePreviews() {
+        wirePreview('license', 'license-preview');
+        wirePreview('registration', 'registration-preview');
+        wirePreview('insurance', 'insurance-preview');
+        wirePreview('paystub', 'paystub-preview');
+        wirePreview('residence', 'residence-preview');
+        wirePreview('other', 'other-preview');
+      }
+
+      // Safely parse JSON (handles HTML error pages)
+      async function safeJson(res) {
+        const text = await res.text();
+        try { return JSON.parse(text); } catch { return { ok: false, error: text?.slice(0, 300) || 'Non-JSON response' }; }
+      }
+
+      // Load the saved link and prefill hidden fields
+      async function loadLink() {
+        if (!slug) {
+          setStatus('Missing link slug in URL.', 'error');
+          throw new Error('Missing slug');
+        }
+        const res = await fetch(`/api/links/${encodeURIComponent(slug)}`);
+        const data = await safeJson(res);
+        if (!res.ok || !data.ok) {
+          const msg = (data && data.error) || `HTTP ${res.status}`;
+          setStatus(msg, 'error');
+          throw new Error(msg);
+        }
+        const link = data.link;
+        if (!link) {
+          setStatus('Link not found.', 'error');
+          throw new Error('Not found');
+        }
+
+        if (appIdEl) appIdEl.value = link.appId || '';
+        if (nameEl)  nameEl.value  = link.name  || '';
+        if (greetingEl && link.name) greetingEl.textContent = `Hi ${link.name}, please upload your documents below.`;
+      }
+
+      async function onSubmit(e) {
+        e.preventDefault();
+        setStatus('', '');
+
+        try {
+          // We DO NOT ask customer for App ID; it’s already set by loadLink()
+          if (!appIdEl || !appIdEl.value) {
+            setStatus('Could not determine your Application ID from the link.', 'error');
+            return;
+          }
+
+          busy(true);
+
+          const fd = new FormData(form);
+
+          // Choose backend base: another origin (if configured) or same-origin
+          const base = (window.ORL_BACKEND_BASE || '').replace(/\/$/, '') || location.origin;
+          const endpoint = `${base}/api/upload/${encodeURIComponent(slug)}`;
+
+          const res = await fetch(endpoint, { method: 'POST', body: fd });
+          const data = await safeJson(res);
+
+          if (!res.ok || !data.ok) {
+            const msg = (data && data.error) || `HTTP ${res.status}`;
+            setStatus('Upload failed: ' + msg, 'error');
+            return;
+          }
+
+          setStatus('Documents uploaded successfully. Thank you!', 'success');
+          form.reset();
+
+          // Hide previews
+          Array.from(document.querySelectorAll('.file-preview')).forEach(img => {
+            img.src = '';
+            img.style.display = 'none';
+          });
+
+          // Optional: show your existing messages
+          document.getElementById('uploadedMessage')?.classList.remove('hidden');
+          document.getElementById('successMessage')?.classList.remove('hidden');
+          setTimeout(() => {
+            document.getElementById('uploadedMessage')?.classList.add('hidden');
+            document.getElementById('successMessage')?.classList.add('hidden');
+          }, 3500);
+        } catch (err) {
+          setStatus('Network error: ' + (err?.message || err), 'error');
+        } finally {
+          busy(false);
+        }
+      }
+
+      // init
+      if (!form) return;
+      loadLink().then(() => {
+        wirePreviews();
+        form.addEventListener('submit', onSubmit);
+      }).catch(() => { /* errors already shown */ });
+    })();
   </script>
 </body>
 </html>
